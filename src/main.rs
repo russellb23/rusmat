@@ -3,6 +3,8 @@ extern crate dev_matrixlib;
 use std::mem;
 
 use self::dev_matrixlib::data_struct::Matrix;
+use self::dev_matrixlib::data_struct::Features;
+use self::dev_matrixlib::data_struct::MatrixIter;
 
 fn gcd(a: usize, b: usize) -> usize {
     let mut a = a;
@@ -31,12 +33,21 @@ fn main() {
 //    println!("{}", i);
     println!("{}", j);
     println!("{}", k);
-    println!("{}", j.transpose());
+    println!("{}", m.transpose());
 
     let x = 98;
     let y = 56;
 
     let p = gcd(x,y);
     println!("GCD of {}, {} == {}", x,y,p);
+
+    let mi = MatrixIter {
+        mat: &m.t(),
+        cur_loc: (1,0)
+    };
+
+    for i in mi {
+        println!("I: {}", &i);
+    }
 
 }
