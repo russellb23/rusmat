@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 use std::ops::Range;
 
+use std::iter::Iterator;
+
 use std::error::Error;
 use std::io::Result;
 use std::io::ErrorKind;
@@ -405,9 +407,10 @@ impl<T: Float + FromPrimitive> Matrix<T> {
 
 /// Matrix Iterators
 pub struct MatrixIter<'a, T: Float + Debug + FromPrimitive> {
-    mat: &'a Matrix<T>,
-    cur_loc: (usize, usize),
+    pub mat: &'a Matrix<T>,
+    pub cur_loc: (usize, usize),
 }
+
 
 impl<'a, T: Float + Debug + FromPrimitive> Iterator for MatrixIter<'a, T> {
         type Item = T;
