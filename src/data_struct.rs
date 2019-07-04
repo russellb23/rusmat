@@ -1,23 +1,21 @@
 // Basic data structures:i Matrix and Vector
 
-use std::cell::Ref;
-use std::cell::RefCell;
-use std::cell::RefMut;
-
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
 use std::ops::Range;
 
-use std::iter::Iterator;
+use std::iter::{Iterator, IntoIterator};
 
-use std::error::Error;
-use std::io::Result;
-use std::io::ErrorKind;
+//use std::error::Error;
+//use std::io::Result;
+//use std::io::ErrorKind;
 use std::fmt;
-use std::fmt::Display;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
-use num::{Float, Zero, One};
+use std::marker::PhantomData;
+
+use num::{Float};
 use num::traits::cast::FromPrimitive;
 
 //=============================================================================
@@ -35,26 +33,28 @@ pub trait Features<T: Float + Debug + Display + FromPrimitive> {
     fn t(&self) -> Self;
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 /// Matrix storage pattern: Column major or Row major
-pub enum Major {
+pub enum Axes {
     /// Column major
     Column,
     /// Row major
     Row,
 }
 
-impl Major {
+impl Axes {
     #[inline]
-    pub fn t(&self) -> Major {
+    pub fn t(&self) -> Axes {
         match *self {
-            Major::Column => Major::Row,
-            Major::Row => Major::Column,
+            Axes::Column => Axes::Row,
+            Axes::Row => Axes::Column,
         }
     }
 }
 
+//=============================================================================
+//Matrix dimensions
+//=============================================================================
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Dim (pub Range<(usize, usize)>);
 
@@ -81,6 +81,9 @@ impl Dim {
     }
 }
 
+//=============================================================================
+//Matrix data
+//=============================================================================
 /// Fundamental matrix structure using RefCell: shareable mutable container ->
 /// interior mutability using references
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -102,16 +105,22 @@ impl<T> MatData<T>
     }
     }
 
+//=============================================================================
+//Matrix
+//=============================================================================
 /// Matrix strucure
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Matrix<T: Float + FromPrimitive> {
     /// Reference to the underlying data storage
     pub data: Rc<MatData<T>>,
     pub vdim: Dim,
-    pub majr: Major,
+    pub axis: Axes,
 }
 
-impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
+//=============================================================================
+//Matrix traits
+//=============================================================================
+impl< T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
     fn shape(&self) -> (usize, usize) {
         (self.vdim.nrows(), self.vdim.ncols())
     }
@@ -125,7 +134,8 @@ impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
     }
 
     fn is_vec(&self) -> bool {
-        if self.vdim.nrows() == 0 || self.vdim.ncols() == 0 { true } else { false }
+        if self.vdim.nrows() == 0 || self.vdim.ncols() == 0 { true } else 
+                                                            { false }
     }
 
     fn is_rvec(&self) -> bool {
@@ -143,8 +153,8 @@ impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
         let l = nr * nc - 1;
         let mut _data = self.data.vals().clone();
 
-        match self.majr {
-            Major::Column => {
+        match self.axis {
+            Axes::Column => {
                 for i in 0..l {
                     _data[i] = self.data.vals()[(i * nc) % l];
                 }
@@ -155,10 +165,10 @@ impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
                     c: nr,
                 }),
                 vdim: Dim::full(self.nrows(), self.ncols()),
-                majr: self.majr.t(),
+                axis: self.axis.t(),
             }
             }
-            Major::Row => {
+            Axes::Row => {
                 for i in 0..l {
                     _data[i] = self.data.vals()[(i * nr) % l];
                 }
@@ -169,7 +179,7 @@ impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
                         c: nr,
                     }),
                     vdim: Dim::full(self.ncols(), self.nrows()),
-                    majr: self.majr.t(),
+                    axis: self.axis.t(),
             }
             }
         }
@@ -180,9 +190,12 @@ impl<T: Float + FromPrimitive + Debug + Display> Features<T> for Matrix<T> {
     }
 }
 
-impl<T: Float + FromPrimitive> Matrix<T> {
+//=============================================================================
+//Matrix constrction
+//=============================================================================
+impl< T: Float + FromPrimitive + Clone> Matrix< T> {
     /// Construct matrix from given vector of specified dimension
-    pub fn from_vec(data: Vec<T>, nrow: usize, ncol: usize) -> Matrix<T> {
+    pub fn from_vec(data: Vec<T>, nrow: usize, ncol: usize) -> Matrix< T> {
         assert_eq!(data.len(), nrow * ncol);
         Matrix {
             data: Rc::new(MatData {
@@ -191,11 +204,11 @@ impl<T: Float + FromPrimitive> Matrix<T> {
                 c: ncol,
             }),
             vdim: Dim::full(nrow, ncol),
-            majr: Major::Column,
+            axis: Axes::Column,
         }
     }
     /// Construct matrix from given function of specified dimension
-    pub fn from_fn<F>(nrow: usize, ncol: usize, mut f: F) -> Matrix<T> 
+    pub fn from_fn<F>(nrow: usize, ncol: usize, mut f: F) -> Matrix< T> 
         where F: FnMut(usize, usize) -> T {
             let mut d = Vec::with_capacity(nrow * ncol);
             for i in 0..nrow {
@@ -210,11 +223,15 @@ impl<T: Float + FromPrimitive> Matrix<T> {
                     c: ncol,
                 }),
                 vdim: Dim::full(nrow, ncol),
-                majr: Major::Column,
+                axis: Axes::Column,
             }
         }
+
+//=============================================================================
+//Predefined matrices of required dimensions
+//=============================================================================
     /// Construct an unit Matrix: Matrix with all its contents 1
-    pub fn unit(nrow: usize, ncol: usize) -> Matrix<T> {
+    pub fn unit(nrow: usize, ncol: usize) -> Matrix< T> {
             Matrix {
                 data: Rc::new(MatData {
                     d: RefCell::new(vec![T::one(); nrow * ncol]),
@@ -222,11 +239,11 @@ impl<T: Float + FromPrimitive> Matrix<T> {
                     c: ncol,
             }),
             vdim: Dim::full(nrow, ncol),
-            majr: Major::Column,
+            axis: Axes::Column,
             }
         }
     /// Construct a zero matrix of specified dimension
-    pub fn zero(nrow: usize, ncol: usize) -> Matrix<T> {
+    pub fn zero(nrow: usize, ncol: usize) -> Matrix< T> {
             Matrix {
                 data: Rc::new(MatData {
                     d: RefCell::new(vec![T::zero(); nrow * ncol]),
@@ -234,7 +251,7 @@ impl<T: Float + FromPrimitive> Matrix<T> {
                     c: ncol,
             }),
             vdim: Dim::full(nrow, ncol),
-            majr: Major::Column,
+            axis: Axes::Column,
             }
         }
     /// Construct a diagonal matrix with elements of a vector
@@ -247,7 +264,7 @@ impl<T: Float + FromPrimitive> Matrix<T> {
                     c: n,
             }),
             vdim: Dim::full(n, n),
-            majr: Major::Column,
+            axis: Axes::Column,
             };
             for i in 0..n {
                 mat.set(i, i, vec[i]);//.expect("index not valid");
@@ -255,10 +272,13 @@ impl<T: Float + FromPrimitive> Matrix<T> {
             mat
         }
     /// Construct an eigen matrix(Identity matrix): 1s at main diagonal
-    pub fn eye(n: usize) -> Matrix<T> {
+    pub fn eye(n: usize) -> Matrix< T> {
             Matrix::diag(&vec![T::one(); n])
         }
     
+//=============================================================================
+//Accessing matrix elements and methods for matrix rows and columns
+//=============================================================================
     /// Set a value at specified location of the matrix
     pub fn set(&mut self, rid: usize, cid: usize, val: T) {
         let i = self.index(rid, cid);
@@ -279,13 +299,15 @@ impl<T: Float + FromPrimitive> Matrix<T> {
     /// Get the index providing row and column in a column major matrix
     #[inline]
     pub fn index(&self, r: usize, c: usize) -> usize {
-        match self.majr {
-            Major::Column => {
-                let (r, c) = (self.vdim.start_col() + r, self.vdim.start_row() + c);
+        match self.axis {
+            Axes::Column => {
+                let (r, c) = (self.vdim.start_col() + r, 
+                                                    self.vdim.start_row() + c);
                 self.tridx(c * self.data.c + r)
             },
-            Major::Row => {
-                let (r, c) = (self.vdim.start_row() + c, self.vdim.start_col() + r );
+            Axes::Row => {
+                let (r, c) = (self.vdim.start_row() + c, 
+                                                    self.vdim.start_col() + r);
                 c * self.data.r + r
             }
         }
@@ -297,95 +319,27 @@ impl<T: Float + FromPrimitive> Matrix<T> {
     }
 
     pub fn nrows(&self) -> usize {
-        match self.majr {
-            Major::Column => { self.vdim.ncols() },
-            Major::Row => { self.vdim.nrows() },
+        match self.axis {
+            Axes::Column => { self.vdim.ncols() },
+            Axes::Row => { self.vdim.nrows() },
         }
     }
 
     pub fn ncols(&self) -> usize {
-        match self.majr {
-            Major::Column => { self.vdim.nrows() },
-            Major::Row => { self.vdim.ncols() },
+        match self.axis {
+            Axes::Column => { self.vdim.nrows() },
+            Axes::Row => { self.vdim.ncols() },
         }
     }
-
-//    /// Returns the shape/dimension of the matrix as a tuple (row, col)
-//    pub fn shape(&self) -> (usize, usize) {
-//        (self.vdim.nrows(), self.vdim.ncols())
-//    }
-//    /// Returns the total number of elements of the matrix
-//    pub fn size(&self) -> usize {
-//        self.data.vals().len()
-//    }
-//    /// Returns the minimum of the dimension among rows and columns
-//    pub fn mindim(&self) -> usize {
-//        self.vdim.nrows().min(self.vdim.ncols())
-//    }
-//
-//    pub fn is_square(&self) -> bool { self.vdim.nrows() == self.vdim.ncols() }
-//
-//    pub fn is_vec(&self) -> bool { self.vdim.nrows() == 1 || self.vdim.ncols() == 1 }
-//
-//    pub fn is_rvec(&self) -> bool { self.vdim.nrows() == 1 }
-//
-//    pub fn is_cvec(&self) -> bool { self.vdim.ncols() == 1 }
-
-//    pub fn transpose(&self) -> Matrix<T> {
-//        let nr = self.nrows();
-//        let nc = self.ncols();
-//        assert_eq!(nr * nc, self.data.vals().len());
-//        let l = nr * nc - 1;
-//        let mut _data = self.data.vals().clone();
-//
-//        match self.majr {
-//            Major::Column => {
-//                for i in 0..l {
-//                    _data[i] = self.data.vals()[(i * nc) % l];
-//                }
-//                Matrix {
-//                data: Rc::new(MatData {
-//                    d: RefCell::new(_data),
-//                    r: nc,
-//                    c: nr,
-//                }),
-//                vdim: Dim::full(self.nrows(), self.ncols()),
-//                majr: self.majr.t(),
-//            }
-//            }
-//            Major::Row => {
-//                for i in 0..l {
-//                    _data[i] = self.data.vals()[(i * nr) % l];
-//                }
-//                Matrix {
-//                    data: Rc::new(MatData {
-//                        d: RefCell::new(_data),
-//                        r: nc,
-//                        c: nr,
-//                    }),
-//                    vdim: Dim::full(self.ncols(), self.nrows()),
-//                    majr: self.majr.t(),
-//            }
-//            }
-//        }
-//    }
-//
-//    #[inline]
-//    pub fn t(&self) -> Matrix<T> { self.transpose() }
-//
-//    }
-    
-//    impl<T: Display> fmt::Display for Vec<T> {
-//        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-//            where T: Float {
-//                for i in 0..self.len() {
-//                    write!(f, "{:+1.5} ", self[i]);
-//                }
-//            }
-//    }
 }
+
+//=============================================================================
+// Matrix Print display 
+// TODO: Pretty print
+// ============================================================================
     /// Print the matrix TODO: Pretty print
-    impl<T: Float + Display + Debug + FromPrimitive > fmt::Display for Matrix<T> {
+    impl<T: Float + Display + Debug + FromPrimitive> fmt::Display for Matrix<T>
+    {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result 
         where T: Float + Debug {
         for i in 0..self.vdim.nrows() {
@@ -398,33 +352,92 @@ impl<T: Float + FromPrimitive> Matrix<T> {
     }
 }
 
-//impl<T: Float + Clone + Copy> Matrix<T> {
-//    fn clone(&self) -> Matrix<T> 
-//        where T: Float {
-//            Matrix::from_vec(self.d.borrow().iter().collect(), self.r, self.c)
-//        }
-//}
+//=============================================================================
+// Matrix into interator
+// ============================================================================
+impl<T: Float + Debug + FromPrimitive> IntoIterator for Matrix<T> {
+    type Item = T;
+    type IntoIter = MatIntoIterator<T>;
 
-/// Matrix Iterators
-pub struct MatrixIter<'a, T: Float + Debug + FromPrimitive> {
-    pub mat: &'a Matrix<T>,
-    pub cur_loc: (usize, usize),
+    fn into_iter(self) -> Self::IntoIter {
+        MatIntoIterator {
+            mat: self,
+            index: (0,0),
+        }
+    }
+}
+
+pub struct MatIntoIterator<T: Float + Debug + FromPrimitive> {
+    mat: Matrix<T>,
+    index: (usize, usize),
 }
 
 
-impl<'a, T: Float + Debug + FromPrimitive> Iterator for MatrixIter<'a, T> {
+impl< T: Float + Debug + FromPrimitive> Iterator for MatIntoIterator<T> {
         type Item = T;
 
         fn next(&mut self) -> Option<T> {
-            if self.cur_loc.1 >= self.mat.vdim.ncols() { return None }
+            if self.index.1 >= self.mat.vdim.ncols() { return None }
 
-            let val = self.mat.get(self.cur_loc.0, self.cur_loc.1);
+            let val = self.mat.get(self.index.0, self.index.1);
 
-            self.cur_loc.0 += 1;
-            if self.cur_loc.0 >= self.mat.vdim.nrows() {
-                self.cur_loc.0 = 0;
-                self.cur_loc.1 += 1;
+            self.index.0 += 1;
+            if self.index.0 >= self.mat.vdim.nrows() {
+                self.index.0 = 0;
+                self.index.1 += 1;
             }
             val
         }
-    }
+}
+//=============================================================================
+//Matrix Slice
+//=============================================================================
+
+#[derive(Debug, Clone, Copy)]
+pub struct MatrixSlice<'a, T> {
+    ptr: *const T,
+    nr: usize,
+    nc: usize,
+    r_stride: usize,
+    _markr: PhantomData<&'a T>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MatrixSliceMut<'a, T> {
+    ptr: *mut T,
+    nr: usize,
+    nc: usize,
+    r_stride: usize,
+    _markr: PhantomData<&'a T>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Row<'a, T> {
+    row: MatrixSlice<'a, T>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RowMut<'a, T> {
+    row: MatrixSliceMut<'a, T>,
+}
+
+/// Immutable row interator
+pub struct RowIter<'a, T> {
+    start: *const T,
+    r_pos: usize,
+    sr: usize,
+    sc: usize,
+    r_stride: usize,
+    _markr: PhantomData<&'a T>,
+}
+
+/// Mutable row iterator
+pub struct RowIterMut<'a, T> {
+    start: *mut T,
+    r_pos: usize,
+    sr: usize,
+    sc: usize,
+    r_stride: usize,
+    _markr: PhantomData<&'a T>,
+}
+
