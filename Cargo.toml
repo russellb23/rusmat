@@ -1,0 +1,11 @@
+[package]
+name = "dev_matrixlib"
+version = "0.1.0"
+authors = ["russellb23 <bertrussell23@yahoo.in>"]
+edition = "2018"
+
+[dependencies]
+#wee-matrix = { path = "/russellb/data/rs_devel/git_projects/matrixlib" }
+num = "0.2"
+rand = "0.6"
+num-iter = "0.1"
